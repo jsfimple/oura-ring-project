@@ -51,13 +51,10 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run_oauth_setup() -> None:
-    state = secrets.token_urlsafe(16)
-    print("Open this URL in your browser to authorize:\n")
-    print(build_authorize_url(state))
-    print("\nWaiting for redirect to", config.OURA_REDIRECT_URI, "...")
+def _capture_code_via_local_server(host: str, port: int) -> str:
+    print(f"\nWaiting for redirect to {config.OURA_REDIRECT_URI} ...")
 
-    server = HTTPServer(("localhost", 8080), _CallbackHandler)
+    server = HTTPServer((host, port), _CallbackHandler)
     server.auth_code = None
     server.auth_error = None
     server.handle_request()
@@ -65,7 +62,44 @@ def run_oauth_setup() -> None:
 
     if not server.auth_code:
         raise SystemExit(f"Authorization failed: {server.auth_error or 'no code received'}")
+    return server.auth_code
 
-    tokens = exchange_code_for_tokens(server.auth_code)
+
+def _capture_code_via_manual_paste() -> str:
+    print(
+        "\nOURA_REDIRECT_URI is not localhost, so nothing on this machine is "
+        "listening for the redirect. After you approve access, Oura will send "
+        f"your browser to a URL starting with {config.OURA_REDIRECT_URI} — "
+        "that page will likely fail to load, which is expected.\n"
+        "Copy the full URL from your browser's address bar (or just the "
+        "'code' value) and paste it below."
+    )
+    pasted = input("\nPaste the redirect URL (or the code): ").strip()
+
+    if pasted.startswith("http"):
+        query = urllib.parse.urlparse(pasted).query
+        code = urllib.parse.parse_qs(query).get("code", [None])[0]
+        if not code:
+            raise SystemExit("No 'code' parameter found in the pasted URL.")
+        return code
+
+    return pasted
+
+
+def run_oauth_setup() -> None:
+    state = secrets.token_urlsafe(16)
+    print("Open this URL in your browser to authorize:\n")
+    print(build_authorize_url(state))
+
+    parsed_redirect = urllib.parse.urlparse(config.OURA_REDIRECT_URI)
+    if parsed_redirect.hostname in ("localhost", "127.0.0.1"):
+        default_port = 443 if parsed_redirect.scheme == "https" else 80
+        code = _capture_code_via_local_server(
+            parsed_redirect.hostname, parsed_redirect.port or default_port
+        )
+    else:
+        code = _capture_code_via_manual_paste()
+
+    tokens = exchange_code_for_tokens(code)
     token_store.save_tokens(tokens)
     print(f"\nTokens saved to {config.TOKEN_FILE}")

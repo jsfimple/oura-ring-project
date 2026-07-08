@@ -29,5 +29,5 @@ OURA_API_BASE = "https://api.ouraring.com/v2/usercollection"
 
 OURA_SCOPES = os.environ.get(
     "OURA_SCOPES",
-    "email personal daily heartrate workout tag session spo2 stress heart_health",
+    "email personal daily heartrate workout tag session spo2Daily stress heart_health ring_configuration",
 )
